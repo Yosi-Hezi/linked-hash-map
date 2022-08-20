@@ -27,6 +27,7 @@
 //! assert_eq!(items, [(2, 20), (1, 10), (3, 30)]);
 //! ```
 
+#![no_std]
 #![forbid(missing_docs)]
 #![cfg_attr(all(feature = "nightly", test), feature(test))]
 
@@ -39,16 +40,46 @@ mod heapsize;
 #[cfg(test)]
 mod tests;
 
-use std::borrow::Borrow;
-use std::cmp::Ordering;
-use std::collections::hash_map::{self, HashMap};
-use std::fmt;
-use std::hash::{BuildHasher, Hash, Hasher};
-use std::iter;
-use std::marker;
-use std::mem;
-use std::ops::{Index, IndexMut};
-use std::ptr::{self, addr_of_mut};
+// use std::borrow::Borrow;
+// use std::cmp::Ordering;
+// use std::collections::hash_map::{self, HashMap};
+// use std::fmt;
+// use std::hash::{BuildHasher, Hash, Hasher};
+// use std::iter;
+// use std::marker;
+// use std::mem;
+// use std::ops::{Index, IndexMut};
+// use std::ptr::{self, addr_of_mut};
+
+#[cfg(feature = "hashbrown")]
+extern crate hashbrown;
+
+use alloc::borrow::Borrow;
+use alloc::boxed::Box;
+use core::cmp::Ordering;
+use core::hash::{BuildHasher, Hash, Hasher};
+use core::iter;
+use core::mem;
+use core::ops::{Index, IndexMut};
+use core::ptr::{self, addr_of_mut};
+use core::{fmt, marker};
+
+#[cfg(any(test, not(feature = "hashbrown")))]
+extern crate std;
+
+#[cfg(feature = "hashbrown")]
+use hashbrown::HashMap;
+#[cfg(not(feature = "hashbrown"))]
+use std::collections::HashMap;
+
+/// The default hasher
+#[cfg(feature = "hashbrown")]
+pub type DefaultHasher = hashbrown::hash_map::DefaultHashBuilder;
+#[cfg(not(feature = "hashbrown"))]
+pub type DefaultHasher = std::collections::hash_map::RandomState;
+
+#[cfg_attr(test, macro_use)]
+extern crate alloc;
 
 struct KeyRef<K> {
     k: *const K,
@@ -62,7 +93,7 @@ struct Node<K, V> {
 }
 
 /// A linked hash map.
-pub struct LinkedHashMap<K, V, S = hash_map::RandomState> {
+pub struct LinkedHashMap<K, V, S = DefaultHasher> {
     map: HashMap<KeyRef<K>, *mut Node<K, V>, S>,
     head: *mut Node<K, V>,
     free: *mut Node<K, V>,
@@ -122,8 +153,8 @@ unsafe fn drop_empty_node<K, V>(the_box: *mut Node<K, V>) {
     // Global allocator for its allocation,
     // (https://doc.rust-lang.org/std/boxed/index.html#memory-layout) so we can safely
     // deallocate the pointer to `Node` by calling `dealloc` method
-    let layout = std::alloc::Layout::new::<Node<K, V>>();
-    std::alloc::dealloc(the_box as *mut u8, layout);
+    let layout = alloc::alloc::Layout::new::<Node<K, V>>();
+    alloc::alloc::dealloc(the_box as *mut u8, layout);
 }
 
 impl<K: Hash + Eq, V> LinkedHashMap<K, V> {
@@ -183,8 +214,8 @@ impl<K, V, S> LinkedHashMap<K, V, S> {
         if self.head.is_null() {
             // allocate the guard node if not present
             unsafe {
-                let node_layout = std::alloc::Layout::new::<Node<K, V>>();
-                self.head = std::alloc::alloc(node_layout) as *mut Node<K, V>;
+                let node_layout = alloc::alloc::Layout::new::<Node<K, V>>();
+                self.head = alloc::alloc::alloc(node_layout) as *mut Node<K, V>;
                 (*self.head).next = self.head;
                 (*self.head).prev = self.head;
             }
@@ -1013,7 +1044,7 @@ pub struct Drain<'a, K, V> {
 
 /// An insertion-order iterator over a `LinkedHashMap`'s entries represented as
 /// an `OccupiedEntry`.
-pub struct Entries<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
+pub struct Entries<'a, K: 'a, V: 'a, S: 'a = DefaultHasher> {
     map: *mut LinkedHashMap<K, V, S>,
     head: *mut Node<K, V>,
     remaining: usize,
@@ -1479,7 +1510,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> IntoIterator for LinkedHashMap<K, V, S> {
 }
 
 /// A view into a single location in a map, which may be vacant or occupied.
-pub enum Entry<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
+pub enum Entry<'a, K: 'a, V: 'a, S: 'a = DefaultHasher> {
     /// An occupied Entry.
     Occupied(OccupiedEntry<'a, K, V, S>),
     /// A vacant Entry.
@@ -1487,14 +1518,14 @@ pub enum Entry<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
 }
 
 /// A view into a single occupied location in a `LinkedHashMap`.
-pub struct OccupiedEntry<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
+pub struct OccupiedEntry<'a, K: 'a, V: 'a, S: 'a = DefaultHasher> {
     entry: *mut Node<K, V>,
     map: *mut LinkedHashMap<K, V, S>,
     marker: marker::PhantomData<&'a K>,
 }
 
 /// A view into a single empty location in a `LinkedHashMap`.
-pub struct VacantEntry<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
+pub struct VacantEntry<'a, K: 'a, V: 'a, S: 'a = DefaultHasher> {
     key: K,
     map: &'a mut LinkedHashMap<K, V, S>,
 }

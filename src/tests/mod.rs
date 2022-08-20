@@ -1,6 +1,12 @@
 #![allow(clippy::needless_collect)]
 #![allow(clippy::iter_cloned_collect)]
 
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use crate::{Entry, LinkedHashMap};
 
 fn assert_opt_eq<V: PartialEq>(opt: Option<&V>, v: V) {
